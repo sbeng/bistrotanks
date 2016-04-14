@@ -1,0 +1,30 @@
+#general-status {
+    margin-top: 22px;
+}
+
+#console {
+    border-top: 1px solid #e6e6e6;
+    height: 150px;
+    overflow: auto;
+}
+
+.no-margin {
+    margin-top: 0px;
+}
+
+.leaveGame, .joinGame {
+    display: none;
+}
+
+.gray{
+    color: #737373;
+}
+span.name{ font-weight: bold; }
+span.green{ color: green; }
+span.red{ color: red; }
+span.yellow{ color: yellow; }
+span.blue{ color: blue; }
+span.purple{ color: purple; }
+span.lightblue{ color: lightblue; }
+span.orange{ color: orange; }
+span.pink{ color: pink; }

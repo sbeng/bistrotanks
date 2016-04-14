@@ -1,0 +1,9 @@
+/deps
+/.erlang.mk
+/.rebar
+/_rel
+/ebin
+/log/*.log
+/.idea
+.DS_Store
+erl_crash.dump

@@ -1,0 +1,85 @@
+{% extends "layout.dtl" %}
+{% block content %}
+<div class="row">
+    <div class="col-lg-7">
+        <h3 id="connectionStatus">Not connected</h3>
+    </div>
+    <div class="col-lg-5">
+        <div id="general-status">
+            <p class="text-right">
+                PING:
+                <span id="ping">unknown</span>,
+                Players:
+                <mark id="players-count">unknown</mark>/∞,
+                Spectators:
+                <mark id="spectators-count">unknown</mark>
+            </p>
+        </div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-4">
+        <h1 id="gameStatus" class="text-left no-margin">status: unknown</h1>
+    </div>
+    <div class="col-lg-6">
+        <form class="form-inline joinGame">
+          <div class="form-group">
+            <input type="text" class="form-control" id="name" placeholder="Nickname">
+          </div>
+          <button type="submit" class="btn btn-primary" id="joinGameBtn">Join the game</button>
+          <span class="gray">format: /[a-zA-Z0-9]{3,6}/</span>
+        </form>
+        <form class="form-inline leaveGame">
+          <button type="submit" class="btn btn-default" id="leaveGameBtn">Leave the game</button>
+        </form>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2">
+        <strong>Scores:</strong>
+        <table class="table table-striped" id="scoreboard">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>K</th>
+                    <th>D</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+    </div>
+    <div class="col-lg-8">
+        <div id="playground"></div>
+        <br/>
+        <em>Console:</em>
+        <div id="console"></div>
+    </div>
+    <div class="col-lg-2">
+        <strong>Game log:</strong>
+        <div id="log"></div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-lg-2">&nbsp;</div>
+    <div class="col-lg-8">
+    </div>
+    <div class="col-lg-2">&nbsp;</div>
+</div>
+<div class="modal fade" tabindex="-1" role="dialog" id="serverModal">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">Message from server</h4>
+      </div>
+      <div class="modal-body">
+        <p></p>
+      </div>
+      <div class="modal-footer">
+        <a href="/" class="btn btn-primary">Refresh</a>
+      </div>
+    </div><!-- /.modal-content -->
+  </div><!-- /.modal-dialog -->
+</div><!-- /.modal -->
+{% endblock %}
