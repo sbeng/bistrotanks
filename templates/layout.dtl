@@ -8,7 +8,7 @@
     <title>SoftBistro tanks!</title>
 
     <!-- Bootstrap -->
-    <link href="/css/bootstrap.css" rel="stylesheet">
+    <link href="/vendor/css/bootstrap.css" rel="stylesheet">
     <link href="/css/style.css" rel="stylesheet">
 
     <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
@@ -23,13 +23,15 @@
         {% block content %}{% endblock %}
     </div>
     <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script src="https://code.jquery.com/jquery-2.2.3.min.js"
+           			  integrity="sha256-a23g1Nt4dtEYOj7bR+vTu7+T8VP13humZFBJNIYoEJo="
+           			  crossorigin="anonymous"></script>
     <!-- Include all compiled plugins (below), or include individual files as needed -->
     <script src="http://underscorejs.org/underscore-min.js"></script>
-    <script src="/js/bootstrap.js"></script>
-    <script src="/js/msgpack.min.js"></script>
-    <script src="/js/moment.min.js"></script>
-    <script src="/js/phaser/build/phaser.min.js"></script>
+    <script src="/vendor/js/bootstrap.js"></script>
+    <script src="/vendor/js/msgpack.min.js"></script>
+    <script src="/vendor/js/moment.min.js"></script>
+    <script src="/vendor/js/phaser.min.js"></script>
     <script src="/js/server.js"></script>
     <script src="/js/player.js"></script>
     <script src="/js/bullet.js"></script>

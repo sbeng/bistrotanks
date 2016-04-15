@@ -9,6 +9,7 @@ start_link() ->
 
 init([]) ->
 	Procs = [
-    {main_server, {bistrotanks_server, start_link, []}, permanent, 5000, worker, [bistrotanks_server]}
+    {main_server, {bistrotanks_server, start_link, []}, transient, 5000, worker, [bistrotanks_server]},
+    {messages, {message_broker, start_link, []}, transient, 5000, worker, [message_broker]}
   ],
-	{ok, {{one_for_one, 1, 5}, Procs}}.
+	{ok, {{one_for_all, 1, 5}, Procs}}.

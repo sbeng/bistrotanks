@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 -include("records.hrl").
 
--export([player_names/0, join_game/2, leave_game/1, add_spectator/2, process_player_actions/2,
+-export([process_player_actions/2,
          stop_player_actions_processing/1, kill_player/4, kill_bullet/2, update_bullet/2]).
 -export([start_link/0]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -11,20 +11,6 @@ start_link() ->
   gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %% API
-%% TODO: move API to bistrotanks module?
-player_names() ->
-  gen_server:call(bistrotanks_server, get_player_names).
-
-join_game(UserPid, UserName) ->
-  gen_server:cast(bistrotanks_server, {join_game, UserPid, UserName}),
-  erlang:send_after(?PLAYER_NEWBORN_TIME, whereis(bistrotanks_server), {tank_grew_up, UserPid}).
-
-leave_game(UserPid) ->
-  gen_server:cast(bistrotanks_server, {leave_game, UserPid}).
-
-add_spectator(UserPid, UserIp) ->
-  gen_server:call(bistrotanks_server, {register_new_user, UserPid, UserIp}).
-
 process_player_actions(UserPid, Actions) ->
   gen_server:cast(bistrotanks_server, {player_actions, UserPid, Actions}).
 
@@ -46,18 +32,20 @@ kill_bullet(BulletRef, LastCoord) ->
 
 %% gen_server callbacks
 init([]) ->
-  erlang:send_after(?WORLD_UPDATES_INTERVAL, self(), update_the_world),
   {ok, #world_status{}}.
 
 handle_call({register_new_user, Pid, RemoteIp}, _From, State) ->
-  erlang:monitor(process, Pid),
-  User = new_user(RemoteIp),
-  Spectators = maps:put(Pid, User, State#world_status.spectators),
-  Reply = {ok, msgpack:pack(message_broker:user_registered(User, maps:values(State#world_status.players)))},
-  Messages = [message_broker:user_connected(User),
-              message_broker:number_of_users(maps:size(Spectators), maps:size(State#world_status.players))],
-  Updates = State#world_status.updates ++ Messages,
-  {reply, Reply, State#world_status{spectators = Spectators, updates = Updates}};
+  Alive = erlang:is_process_alive(Pid),
+  if (Alive =:= true) ->
+    erlang:monitor(process, Pid),
+    User = new_user(RemoteIp),
+    Spectators = maps:put(Pid, User, State#world_status.spectators),
+    message_broker:add_to_queue([messages:user_connected(User),
+                                 messages:number_of_users(maps:size(Spectators), maps:size(State#world_status.players))]),
+    Reply = msgpack:pack(messages:user_registered(User, maps:values(State#world_status.players))),
+    {reply, {ok, Reply}, State#world_status{spectators = Spectators}};
+    true -> {reply, websocket_is_dead, State}
+  end;
 handle_call(get_player_names, _From, State) ->
   PlayerNames = lists:map(fun(U) -> U#user.name end, maps:values(State#world_status.players)),
   {reply, {ok, PlayerNames}, State};
@@ -71,10 +59,10 @@ handle_cast({join_game, UserPid, Name}, State) ->
   UpdatedUser = set_random_position(UserWithColor#user{status = player, name = Name, tank_status = newborn}),
   Spectators = maps:remove(UserPid, State#world_status.spectators),
   Players = maps:put(UserPid, UpdatedUser, State#world_status.players),
-  Messages = [message_broker:user_joined_game(UpdatedUser),
-              message_broker:number_of_users(maps:size(Spectators), maps:size(Players))],
-  Updates = State#world_status.updates ++ Messages,
-  UpdatedState = State#world_status{players = Players, spectators = Spectators, updates = Updates},
+  message_broker:add_to_queue([messages:user_joined_game(UpdatedUser),
+                               messages:number_of_users(maps:size(Spectators), maps:size(Players))]),
+  UpdatedState = State#world_status{players = Players, spectators = Spectators},
+  erlang:send_after(?PLAYER_NEWBORN_TIME, self(), {tank_grew_up, UserPid}),
   {noreply, UpdatedState};
 handle_cast({leave_game, UserPid}, State) ->
   {ok, User} = maps:find(UserPid, State#world_status.players),
@@ -83,10 +71,9 @@ handle_cast({leave_game, UserPid}, State) ->
   Players = maps:remove(UserPid, State#world_status.players),
   %% notify bullets
   [bullet:remove_player(BulledPid, UserPid) || BulledPid <- State#world_status.bullets],
-  Messages = [message_broker:user_left_game(User),
-              message_broker:number_of_users(maps:size(Spectators), maps:size(Players))],
-  Updates = State#world_status.updates ++ Messages,
-  UpdatedState = State#world_status{players = Players, spectators = Spectators, updates = Updates},
+  message_broker:add_to_queue([messages:user_left_game(User),
+                               messages:number_of_users(maps:size(Spectators), maps:size(Players))]),
+  UpdatedState = State#world_status{players = Players, spectators = Spectators},
   {noreply, UpdatedState};
 
 %% handle actions by player
@@ -102,14 +89,15 @@ handle_cast({player_actions, UserPid, Actions}, State) ->
 
   %% check if user wants to fire
   NeedToFire = lists:any(fun(A)-> A == "fire" end, Actions),
-  {Bullets, Messages} = if NeedToFire =:= true ->
+  Bullets = if NeedToFire =:= true ->
               BulletPid = create_bullet(UserPid, UpdatedUser, Players),
-              {[BulletPid|State#world_status.bullets], State#world_status.updates ++ [message_broker:bullet_fired(bullet:get_uuid(BulletPid), UpdatedUser)]};
-              true -> {State#world_status.bullets, State#world_status.updates}
+              message_broker:add_to_queue(messages:bullet_fired(bullet:get_uuid(BulletPid), UpdatedUser)),
+              [BulletPid|State#world_status.bullets];
+              true -> State#world_status.bullets
             end,
 
-  Updates = Messages ++ [message_broker:user_position(UpdatedUser)],
-  {noreply, State#world_status{players = Players, updates = Updates, bullets = Bullets}};
+  message_broker:add_to_queue(messages:user_position(UpdatedUser)),
+  {noreply, State#world_status{players = Players, bullets = Bullets}};
 %% no actions from player, do not include him in world updates
 handle_cast({player_stopped, UserPid}, State) ->
 %%   lager:info("player stopped"),
@@ -120,13 +108,13 @@ handle_cast({player_stopped, UserPid}, State) ->
 
 %% bullets
 handle_cast({update_bullet, {_BulletPid, BulletUUID}, Coord}, State) ->
-  Updates = State#world_status.updates ++ [message_broker:bullet_position(BulletUUID, Coord)],
-  {noreply, State#world_status{updates = Updates}};
+  message_broker:add_to_queue(messages:bullet_position(BulletUUID, Coord)),
+  {noreply, State};
 handle_cast({kill_bullet, {BulletPid, BulletUUID}, LastCoord}, State) ->
-  Updates = State#world_status.updates ++ [message_broker:bullet_position(BulletUUID, LastCoord),
-                                           message_broker:bullet_dead(BulletUUID)],
+  message_broker:add_to_queue([messages:bullet_position(BulletUUID, LastCoord),
+                               messages:bullet_dead(BulletUUID)]),
   Bullets = State#world_status.bullets -- [BulletPid],
-  {noreply, State#world_status{updates = Updates, bullets = Bullets}};
+  {noreply, State#world_status{bullets = Bullets}};
 handle_cast({player_killed, [{bullet, BulletRef}, {coordinates, LastCoord}, {killer, KillerPid}, {player, KilledPid}]}, State) ->
   {BulletPid, BulletUUID} = BulletRef,
   %% killer may not be in game anymore
@@ -142,10 +130,10 @@ handle_cast({player_killed, [{bullet, BulletRef}, {coordinates, LastCoord}, {kil
   KilledUserUpdated = KilledUser#user{tank_status = dead, deaths = KilledUser#user.deaths + 1},
   UpdatedPlayers = maps:put(KilledPid, KilledUserUpdated, Players),
   Bullets = State#world_status.bullets -- [BulletPid],
-  Updates = State#world_status.updates ++ [message_broker:bullet_position(BulletUUID, LastCoord),
-                                           message_broker:user_killed(KilledUserUpdated, KillerUUID),
-                                           message_broker:bullet_dead(BulletUUID)],
-  {noreply, State#world_status{updates = Updates, bullets = Bullets, players = UpdatedPlayers}};
+  message_broker:add_to_queue([messages:bullet_position(BulletUUID, LastCoord),
+                               messages:user_killed(KilledUserUpdated, KillerUUID),
+                               messages:bullet_dead(BulletUUID)]),
+  {noreply, State#world_status{bullets = Bullets, players = UpdatedPlayers}};
 
 handle_cast(Message, State) ->
   lager:info("handle_cast, unknown message: ~p", [Message]),
@@ -159,52 +147,37 @@ handle_info({'DOWN', MonitorRef, process, UserPid, _Cause}, State) ->
   {Players, Spectators} = if User#user.status =:= player ->
                             %% notify bullets
                             [bullet:remove_player(BulledPid, UserPid) || BulledPid <- State#world_status.bullets],
+                            message_broker:add_to_queue([messages:user_left_game(User),
+                                                         messages:user_disconnected(User)]),
                             {maps:remove(UserPid, State#world_status.players), State#world_status.spectators};
                             true ->
+                              message_broker:add_to_queue(messages:user_disconnected(User)),
                               {State#world_status.players, maps:remove(UserPid, State#world_status.spectators)}
                           end,
-  Msg = if User#user.status =:= spectator ->
-          [message_broker:user_disconnected(User)];
-          true ->
-            [message_broker:user_left_game(User), message_broker:user_disconnected(User)]
-        end,
-  Messages = Msg ++ [message_broker:number_of_users(maps:size(Spectators), maps:size(Players))],
-  Updates = State#world_status.updates ++ Messages,
-  {noreply, State#world_status{players = Players, spectators = Spectators, updates = Updates}};
-%% send world updates by timer, if any
-handle_info(update_the_world, State) when length(State#world_status.updates) > 0 ->
-  UserPids = maps:keys(State#world_status.players) ++ maps:keys(State#world_status.spectators),
-  Message = message_broker:world_updates(State#world_status.updates),
-  [UserPid ! {world_updates, msgpack:pack(Message)} || UserPid <- UserPids],
-  erlang:send_after(?WORLD_UPDATES_INTERVAL, self(), update_the_world),
-  {noreply, State#world_status{updates = []}};
-handle_info(update_the_world, State) ->
-  erlang:send_after(?WORLD_UPDATES_INTERVAL, self(), update_the_world),
-  {noreply, State};
+  message_broker:add_to_queue(messages:number_of_users(maps:size(Spectators), maps:size(Players))),
+  {noreply, State#world_status{players = Players, spectators = Spectators}};
 handle_info({tank_grew_up, UserPid}, State) ->
-  UpdatedState = case maps:find(UserPid, State#world_status.players) of
-                   {ok, User} ->
-                     UpdatedUser = User#user{tank_status = mature},
-                     Players = maps:put(UserPid, UpdatedUser, State#world_status.players),
-                     Updates = State#world_status.updates ++ [message_broker:tank_grew_up(UpdatedUser)],
-                     %% notify bullets that they can possibly hit this player
-                     [bullet:add_player(BulledPid, UserPid, [UpdatedUser#user.x, UpdatedUser#user.y]) || BulledPid <- State#world_status.bullets],
-                     State#world_status{players = Players, updates = Updates};
-                   _ -> State
-                 end,
-  {noreply, UpdatedState};
+  case maps:find(UserPid, State#world_status.players) of
+    {ok, User} ->
+      UpdatedUser = User#user{tank_status = mature},
+      Players = maps:put(UserPid, UpdatedUser, State#world_status.players),
+      message_broker:add_to_queue(messages:tank_grew_up(UpdatedUser)),
+      %% notify bullets that they can possibly hit this player
+      [bullet:add_player(BulledPid, UserPid, [UpdatedUser#user.x, UpdatedUser#user.y]) || BulledPid <- State#world_status.bullets],
+      {noreply, State#world_status{players = Players}};
+    _ -> {noreply, State}
+  end;
 handle_info({respawn, UserPid}, State) ->
-  UpdatedState = case maps:find(UserPid, State#world_status.players) of
-                   {ok, User} ->
-                     UpdatedUserWithPosition = set_random_position(User),
-                     UpdatedUser = UpdatedUserWithPosition#user{tank_status = newborn},
-                     erlang:send_after(?PLAYER_NEWBORN_TIME, whereis(bistrotanks_server), {tank_grew_up, UserPid}),
-                     Players = maps:put(UserPid, UpdatedUser, State#world_status.players),
-                     Updates = State#world_status.updates ++ [message_broker:respawn(UpdatedUser)],
-                     State#world_status{players = Players, updates = Updates};
-                   _ -> State
-                end,
-  {noreply, UpdatedState};
+  case maps:find(UserPid, State#world_status.players) of
+     {ok, User} ->
+       UpdatedUserWithPosition = set_random_position(User),
+       UpdatedUser = UpdatedUserWithPosition#user{tank_status = newborn},
+       erlang:send_after(?PLAYER_NEWBORN_TIME, whereis(bistrotanks_server), {tank_grew_up, UserPid}),
+       Players = maps:put(UserPid, UpdatedUser, State#world_status.players),
+       message_broker:add_to_queue(messages:respawn(UpdatedUser)),
+       {noreply, State#world_status{players = Players}};
+     _ -> {noreply, State}
+  end;
 handle_info(Message, State) ->
   lager:info("handle_info: ~p", [Message]),
   {noreply, State}.

@@ -17,7 +17,8 @@
 
 -record(user, {name = <<>>, kills = 0, deaths = 0, color, status = spectator,
                uuid, ip, x = 0, y = 0, rotation = 0, position_updated = false, tank_status = newborn}).
--record(world_status, {spectators = #{}, players = #{}, updates = [], bullets = []}).
+-record(world_status, {spectators = #{}, players = #{}, bullets = []}).
 -record(bullet_status, {x = 0, y = 0, rotation = 0, user_fired, players = #{}, uuid}).
--record(connection, {connection_status = spectator, player_actions = [],
-                     last_action_at, is_moving = false, last_fire_at}).
+-record(broker, {listeners = [], messages = []}).
+-record(websocket, {connection_status = spectator, player_actions = [],
+                    last_action_at, is_moving = false, last_fire_at}).

@@ -11,6 +11,7 @@ start(_Type, _Args) ->
       {"/js/[...]", cowboy_static, {priv_dir, bistrotanks, "js", [{mimetypes, cow_mimetypes, web}]}},
       {"/images/[...]", cowboy_static, {priv_dir, bistrotanks, "images", [{mimetypes, cow_mimetypes, web}]}},
       {"/fonts/[...]", cowboy_static, {priv_dir, bistrotanks, "fonts", [{mimetypes, cow_mimetypes, web}]}},
+      {"/vendor/[...]", cowboy_static, {priv_dir, bistrotanks, "vendor", [{mimetypes, cow_mimetypes, web}]}},
 
       {"/", index_handler, []},
       {"/websocket", websocket_handler, []},
